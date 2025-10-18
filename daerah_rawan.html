@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peta Keamanan Daerah</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #map { height: 500px; width: 100%; margin: 20px 0; }
+        .legend { background: white; padding: 10px; border-radius: 5px; position: absolute; bottom: 20px; left: 20px; }
+    </style>
+</head>
+<body>
+
+    <h2>Peta Keamanan Daerah</h2>
+
+    <label for="startManual">Titik Awal:</label>
+    <input type="text" id="startManual" placeholder="Masukkan lokasi...">
+    <button onclick="searchLocation('startManual')">Cari</button>
+
+    <label for="endManual">Titik Tujuan:</label>
+    <input type="text" id="endManual" placeholder="Masukkan lokasi...">
+    <button onclick="searchLocation('endManual')">Cari</button>
+
+    <button onclick="showRoute()">Tampilkan Rute</button>
+    <button onclick="removeRoute()">Hapus Rute</button>
+
+    <h3>Rute Favorit</h3>
+    <select id="savedRoutes">
+        <option value="">Pilih Rute</option>
+    </select>
+    <button onclick="loadSavedRoute()">Gunakan Rute</button>
+    <button onclick="saveRoute()">Simpan Rute</button>
+
+    <div id="map"></div>
+
+    <script>
+        var map = L.map('map').setView([-6.200000, 106.816666], 12); // Jakarta
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        var routingControl;
+        var savedRoutes = {}; // Menyimpan rute favorit
+
+        // Data marker dengan tingkat keamanan
+        var localData = [
+            { name: "Kecamatan Tanah Abang", type: "Aman", lat: -6.1911, lon: 106.8134, crimeCount: 5 },
+            { name: "Kecamatan Gambir", type: "Waspada", lat: -6.1750, lon: 106.8311, crimeCount: 12 },
+            { name: "Kecamatan Senen", type: "Rawan", lat: -6.1790, lon: 106.8315, crimeCount: 20 },
+            { name: "Kecamatan Cempaka Putih", type: "Aman", lat: -6.1694, lon: 106.8497, crimeCount: 3 },
+            // Data kecamatan lainnya...
+        ];
+
+        // Warna marker berdasarkan tingkat keamanan
+        var iconColors = {
+            "Aman": "green",        // Aman
+            "Waspada": "yellow",    // Waspada
+            "Rawan": "red"          // Rawan
+        };
+
+        // Menampilkan marker berdasarkan tingkat keamanan
+        localData.forEach(data => {
+            L.marker([data.lat, data.lon], {
+                icon: L.divIcon({
+                    className: `custom-icon-${data.type}`,
+                    html: `<div style="background-color: ${iconColors[data.type]}; width: 15px; height: 15px; border-radius: 50%;"></div>`,
+                    iconSize: [15, 15]
+                })
+            })
+            .addTo(map)
+            .bindPopup(`<b>${data.name}</b><br>Status: ${data.type}<br>Jumlah Kejahatan: ${data.crimeCount}`);
+        });
+
+        // Fungsi mencari lokasi manual
+        function searchLocation(inputId) {
+            var location = document.getElementById(inputId).value;
+            if (!location) return alert("Masukkan lokasi dulu!");
+
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${location}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        var latlng = [data[0].lat, data[0].lon];
+                        document.getElementById(inputId).dataset.latlng = latlng;
+                        L.marker(latlng).addTo(map).bindPopup(`Hasil: ${location}`).openPopup();
+                        map.setView(latlng, 14);
+                    } else {
+                        alert("Lokasi tidak ditemukan!");
+                    }
+                })
+                .catch(err => alert("Gagal mencari lokasi!"));
+        }
+
+        // Fungsi menampilkan rute
+        function showRoute() {
+            var startLatLng = document.getElementById("startManual").dataset.latlng;
+            var endLatLng = document.getElementById("endManual").dataset.latlng;
+
+            if (!startLatLng || !endLatLng) {
+                return alert("Pilih titik awal & tujuan dulu!");
+            }
+
+            startLatLng = L.latLng(startLatLng.split(","));
+            endLatLng = L.latLng(endLatLng.split(","));
+
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+
+            routingControl = L.Routing.control({
+                waypoints: [startLatLng, endLatLng],
+                routeWhileDragging: true
+            }).addTo(map);
+        }
+
+        function removeRoute() {
+            if (routingControl) {
+                map.removeControl(routingControl);
+                routingControl = null;
+            }
+        }
+
+        function saveRoute() {
+            var start = document.getElementById("startManual").value;
+            var end = document.getElementById("endManual").value;
+            var startLatLng = document.getElementById("startManual").dataset.latlng;
+            var endLatLng = document.getElementById("endManual").dataset.latlng;
+
+            if (!start || !end || !startLatLng || !endLatLng) {
+                return alert("Masukkan lokasi sebelum menyimpan!");
+            }
+
+            var routeName = `${start} → ${end}`;
+            savedRoutes[routeName] = { startLatLng, endLatLng };
+
+            var option = document.createElement("option");
+            option.value = routeName;
+            option.textContent = routeName;
+            document.getElementById("savedRoutes").appendChild(option);
+        }
+
+        function loadSavedRoute() {
+            var routeName = document.getElementById("savedRoutes").value;
+            if (!routeName) return alert("Pilih rute dulu!");
+
+            var route = savedRoutes[routeName];
+            document.getElementById("startManual").dataset.latlng = route.startLatLng;
+            document.getElementById("endManual").dataset.latlng = route.endLatLng;
+
+            showRoute();
+        }
+
+        // Fungsi menampilkan data jalan dari Overpass API (untuk kepadatan lalu lintas)
+        function showTrafficDensity() {
+            var overpassUrl = "https://overpass-api.de/api/interpreter?data=[out:json];way[highway];(._;>;);out;";
+            
+            fetch(overpassUrl)
+                .then(response => response.json())
+                .then(data => {
+                    data.elements.forEach(element => {
+                        var latLngs = [];
+                        if (element.type === 'way') {
+                            element.nodes.forEach(node => {
+                                latLngs.push([node.lat, node.lon]);
+                            });
+
+                            var color = "green"; // Default color for minor roads
+                            if (element.tags.highway === "motorway" || element.tags.highway === "primary") {
+                                color = "red"; // Main roads or highways
+                            } else if (element.tags.highway === "secondary") {
+                                color = "yellow"; // Secondary roads
+                            }
+
+                            L.polyline(latLngs, { color: color, weight: 5 }).addTo(map);
+                        }
+                    });
+                })
+                .catch(err => alert("Gagal mengambil data lalu lintas!"));
+        }
+
+        // Panggil fungsi untuk menampilkan data kepadatan lalu lintas
+        showTrafficDensity();
+
+        // Menambahkan legenda tingkat keamanan
+        var legend = L.control({ position: "bottomleft" });
+
+        legend.onAdd = function () {
+            var div = L.DomUtil.create("div", "legend");
+            div.innerHTML = "<b>Status Keamanan</b><br>";
+            for (var key in iconColors) {
+                div.innerHTML += `<div style="display:flex; align-items:center;">
+                    <div style="background-color:${iconColors[key]}; width:15px; height:15px; margin-right:5px;"></div> ${key}
+                </div>`;
+            }
+            return div;
+        };
+
+        legend.addTo(map);
+    </script>
+
+</body>
+</html>
